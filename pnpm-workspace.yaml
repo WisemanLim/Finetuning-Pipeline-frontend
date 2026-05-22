@@ -1,0 +1,9 @@
+# pnpm v11+ 설정 (package.json의 "pnpm" 필드 deprecated).
+# allowBuilds — 빌드 스크립트 실행 허용 패키지 (boolean per package).
+# 참고: https://pnpm.io/settings#allowbuilds
+
+allowBuilds:
+  unrs-resolver: true
+  esbuild: true
+  sharp: true
+  "@swc/core": true

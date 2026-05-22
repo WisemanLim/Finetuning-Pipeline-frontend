@@ -1,0 +1,41 @@
+# Node
+node_modules
+.pnpm-store
+npm-debug.log*
+yarn-debug.log*
+pnpm-debug.log*
+
+# Next.js
+.next
+out
+next-env.d.ts
+
+# 환경 변수
+.env
+.env.local
+.env.development.local
+.env.production.local
+
+# 빌드 / 캐시
+.turbo
+.swc
+*.tsbuildinfo
+.eslintcache
+
+# 테스트
+coverage
+test-results
+playwright-report
+playwright/.cache
+
+# Git / IDE
+.git
+.gitignore
+.vscode
+.idea
+.DS_Store
+
+# 메타
+README.md
+*.md
+.omc/
