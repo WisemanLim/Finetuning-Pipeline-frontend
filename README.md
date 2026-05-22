@@ -64,6 +64,28 @@ pnpm build
 pnpm start    # 프로덕션 서버
 ```
 
+### 6. Docker 통합 실행
+
+워커 + 프론트 + DB/Redis/MinIO를 전체 스택으로 기동하려면 `Finetuning-Pipeline-ops`의 Makefile을 사용:
+
+```bash
+cd ~/Developer/Web\(Node,Script\)/Finetuning-Pipeline-ops
+make docker-dev          # GPU 자동 감지 — 권장
+make docker-dev-cpu      # CPU 강제
+make docker-dev-gpu      # GPU 강제 (nvidia 런타임 필요)
+```
+
+상세: [`../Finetuning-Pipeline-ops/docker/README.md`](../Finetuning-Pipeline-ops/docker/README.md)
+
+#### 단독 이미지 빌드
+
+```bash
+docker build -t wfp-frontend:latest .
+docker run -p 3000:3000 -e WFP_WORKER_URL=http://host.docker.internal:8000 wfp-frontend:latest
+```
+
+`public/` 디렉토리는 빈 상태여도 무방 — Dockerfile builder 단계에서 자동 생성 (`mkdir -p public`). `.gitkeep`이 디렉토리 트래킹용.
+
 ---
 
 ## 기술 스택
