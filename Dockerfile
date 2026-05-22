@@ -29,6 +29,9 @@ WORKDIR /app
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
 
+# public/ 디렉토리 보장 — 빈 디렉토리는 git이 추적하지 않음
+RUN mkdir -p public
+
 # Next.js standalone — node_modules 자동 추적 + 최소 산출물
 ENV NEXT_TELEMETRY_DISABLED=1
 ENV NODE_ENV=production
