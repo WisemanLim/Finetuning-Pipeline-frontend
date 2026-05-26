@@ -82,13 +82,20 @@ make docker-dev-gpu      # GPU 강제 (nvidia 런타임 필요)
 호스트에서 `pnpm dev`(핫리로드) 또는 `pnpm build/start`(prod) 직접 실행. 인프라만 docker. Apple Silicon GPU/MPS, 빠른 HMR, 직접 디버깅에 유리.
 
 ```bash
-make docker-dev-via-host    # pnpm dev (핫리로드)
-make docker-prod-via-host   # pnpm build → pnpm start
+# 호스트 foreground (Ctrl+C 정지)
+make dev-web                # pnpm dev (HMR)
+make prod-web               # pnpm build → pnpm start
+
+# 하이브리드 — 인프라(docker) + web(호스트 background)
+make docker-dev-via-host    # = docker-infra + nohup make dev-web (+ dev-worker)
+make docker-prod-via-host   # = docker-infra + pnpm build + nohup make prod-web-runtime (+ prod-worker)
 
 make host-status            # PID 상태
 make host-logs-web          # web 로그 tail
-make host-down              # 호스트 프로세스 정지
+make host-down              # 호스트 프로세스 정지 (자식까지)
 ```
+
+via-host는 내부적으로 foreground 타겟(`dev-web`/`prod-web`)을 `nohup $(MAKE)`로 background 실행 — 단일 소스.
 
 상세: [`../Finetuning-Pipeline-ops/docker/README.md`](../Finetuning-Pipeline-ops/docker/README.md)
 
