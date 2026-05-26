@@ -79,6 +79,7 @@ export interface JobStatus {
   data_source_mode?: DataSourceMode;
   data_source_path?: string;
   keywords?: string[];
+  train_override?: Record<string, unknown>;
 }
 
 export interface JobCreateRequest {

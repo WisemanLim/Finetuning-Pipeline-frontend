@@ -62,7 +62,14 @@ export const useWizard = create<WizardState>()(
       ...initial,
       set: (patch) => set(patch),
       reset: () => set(initial),
-      loadFromJob: (job) =>
+      loadFromJob: (job) => {
+        const override = (job.train_override ?? {}) as Record<string, number | undefined>;
+        const trainOverride = {
+          num_epochs: typeof override.num_epochs === "number" ? override.num_epochs : undefined,
+          learning_rate: typeof override.learning_rate === "number" ? override.learning_rate : undefined,
+          batch_size: typeof override.batch_size === "number" ? override.batch_size : undefined,
+        };
+        const useAdvanced = Object.values(trainOverride).some((v) => v !== undefined);
         set({
           ksicSection: job.ksic_section ?? "",
           ksicDivision: job.ksic_division ?? "",
@@ -74,10 +81,10 @@ export const useWizard = create<WizardState>()(
           dataSourceMode: (job.data_source_mode as DataSourceMode) ?? "upload",
           dataSourcePath: job.data_source_path ?? "",
           keywords: job.keywords ?? [],
-          // train override는 spec에 없음 — 위자드에서 다시 결정
-          trainOverride: {},
-          useAdvanced: false,
-        }),
+          trainOverride,
+          useAdvanced,
+        });
+      },
     }),
     { name: "wfp-wizard" },
   ),
