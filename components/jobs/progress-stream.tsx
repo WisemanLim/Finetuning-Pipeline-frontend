@@ -29,29 +29,47 @@ const STAGE_LABELS = [
 interface Props {
   jobId: string;
   initialStage?: number;
+  /** 서버 저장 이벤트 (FAILED/완료 잡의 과거 로그) — 문자열 메시지 배열 */
+  initialEvents?: string[];
+  /** WS 연결 시도 여부. false면 과거 이벤트만 표시 (FAILED/DONE 잡). */
+  liveStream?: boolean;
 }
 
-export function ProgressStream({ jobId, initialStage = 0 }: Props) {
+export function ProgressStream({
+  jobId,
+  initialStage = 0,
+  initialEvents = [],
+  liveStream = true,
+}: Props) {
   const [stage, setStage] = useState(initialStage);
-  const [logs, setLogs] = useState<ProgressEvent[]>([]);
+  // 과거 이벤트는 msg만 있는 형태로 변환해 logs와 통합 렌더링
+  const [logs, setLogs] = useState<ProgressEvent[]>(() =>
+    initialEvents.map((m) => ({ job_id: jobId, msg: m, extra: {} })),
+  );
   const [connected, setConnected] = useState(false);
   const wsRef = useRef<JobProgressWS | null>(null);
   const logEndRef = useRef<HTMLDivElement>(null);
 
+  // 새 잡 페이지 / liveStream 토글 시 초기 이벤트 동기화
   useEffect(() => {
+    setLogs(initialEvents.map((m) => ({ job_id: jobId, msg: m, extra: {} })));
+  }, [jobId, initialEvents]);
+
+  useEffect(() => {
+    if (!liveStream) return;  // FAILED/DONE이면 WS 연결 안 함
     const ws = new JobProgressWS(jobId, {
       onOpen: () => setConnected(true),
       onClose: () => setConnected(false),
       onMessage: (ev) => {
         if (typeof ev.extra?.stage === "number") setStage(ev.extra.stage);
-        setLogs((prev) => [...prev.slice(-99), ev]); // 최근 100개 유지
+        setLogs((prev) => [...prev.slice(-199), ev]); // 최근 200개
       },
       reconnectMs: 3000,
     });
     ws.connect();
     wsRef.current = ws;
     return () => ws.close();
-  }, [jobId]);
+  }, [jobId, liveStream]);
 
   // 새 로그 도착 시 자동 스크롤
   useEffect(() => {
@@ -79,9 +97,11 @@ export function ProgressStream({ jobId, initialStage = 0 }: Props) {
           <Progress value={progressPct} />
         </div>
 
-        <div className="border rounded-md bg-muted/30 p-3 h-64 overflow-y-auto font-mono text-xs space-y-1">
+        <div className="border rounded-md bg-muted/30 p-3 h-96 overflow-y-auto font-mono text-xs space-y-1">
           {logs.length === 0 && (
-            <p className="text-muted-foreground italic">이벤트 대기 중...</p>
+            <p className="text-muted-foreground italic">
+              {liveStream ? "이벤트 대기 중..." : "저장된 이벤트 없음"}
+            </p>
           )}
           {logs.map((log, i) => (
             <div key={i} className="flex gap-2">

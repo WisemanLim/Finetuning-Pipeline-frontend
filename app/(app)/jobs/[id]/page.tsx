@@ -160,7 +160,12 @@ export default function JobMonitorPage() {
         </Card>
 
         {/* 진행 스트림 */}
-        <ProgressStream jobId={jobId} initialStage={job?.current_stage || 0} />
+        <ProgressStream
+          jobId={jobId}
+          initialStage={job?.current_stage || 0}
+          initialEvents={job?.events || []}
+          liveStream={isRunning}
+        />
 
         {/* 손실 그래프 (Stage 7 진행 중) */}
         <Card>

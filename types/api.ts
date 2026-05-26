@@ -80,6 +80,8 @@ export interface JobStatus {
   data_source_path?: string;
   keywords?: string[];
   train_override?: Record<string, unknown>;
+  /** 과거 이벤트 — WS 미연결 (FAILED/완료) 상태에서 진행 로그 확인용 */
+  events?: string[];
 }
 
 export interface JobCreateRequest {
