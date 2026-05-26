@@ -66,13 +66,28 @@ pnpm start    # 프로덕션 서버
 
 ### 6. Docker 통합 실행
 
-워커 + 프론트 + DB/Redis/MinIO를 전체 스택으로 기동하려면 `Finetuning-Pipeline-ops`의 Makefile을 사용:
+워커 + 프론트 + DB/Redis/MinIO를 전체 스택으로 기동하려면 `Finetuning-Pipeline-ops`의 Makefile 사용.
+
+#### 전체 컨테이너 모드
 
 ```bash
 cd ~/Developer/Web\(Node,Script\)/Finetuning-Pipeline-ops
 make docker-dev          # GPU 자동 감지 — 권장
 make docker-dev-cpu      # CPU 강제
 make docker-dev-gpu      # GPU 강제 (nvidia 런타임 필요)
+```
+
+#### 하이브리드 모드 (인프라 docker + web 호스트)
+
+호스트에서 `pnpm dev`(핫리로드) 또는 `pnpm build/start`(prod) 직접 실행. 인프라만 docker. Apple Silicon GPU/MPS, 빠른 HMR, 직접 디버깅에 유리.
+
+```bash
+make docker-dev-via-host    # pnpm dev (핫리로드)
+make docker-prod-via-host   # pnpm build → pnpm start
+
+make host-status            # PID 상태
+make host-logs-web          # web 로그 tail
+make host-down              # 호스트 프로세스 정지
 ```
 
 상세: [`../Finetuning-Pipeline-ops/docker/README.md`](../Finetuning-Pipeline-ops/docker/README.md)
