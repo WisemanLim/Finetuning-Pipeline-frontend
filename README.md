@@ -99,6 +99,8 @@ make host-down              # pm2 delete all + pm2 kill + 포트 3000 좀비 정
 
 via-host는 `Finetuning-Pipeline-ops/scripts/ecosystem.config.cjs` 사용 — PM2 ecosystem에 web dev/prod 각각 정의. 자동 재시작, 중앙 로그, 상태 모니터링.
 
+**dev/prod 대칭**: HMR (dev) vs build/start (prod), env-check 강도 차이 외에 모든 인프라/도구 체인 동일.
+
 `make bootstrap`이 pnpm(corepack) + pm2(npm) 자동 설치.
 
 상세: [`../Finetuning-Pipeline-ops/docker/README.md`](../Finetuning-Pipeline-ops/docker/README.md)
