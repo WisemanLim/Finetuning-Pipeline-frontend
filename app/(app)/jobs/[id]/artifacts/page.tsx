@@ -8,6 +8,7 @@
  */
 import { useParams } from "next/navigation";
 import { useQuery } from "@tanstack/react-query";
+import { useState } from "react";
 import { Header } from "@/components/layout/header";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -32,6 +33,18 @@ export default function ArtifactsPage() {
     queryKey: ["job", jobId],
     queryFn: () => api.getJob(jobId),
   });
+
+  const [busyKind, setBusyKind] = useState<string | null>(null);
+  const onDownload = async (kind: string) => {
+    setBusyKind(kind);
+    try {
+      await api.downloadArtifact(jobId, kind);
+    } catch (e) {
+      alert(`다운로드 실패: ${(e as Error).message}`);
+    } finally {
+      setBusyKind(null);
+    }
+  };
 
   return (
     <>
@@ -72,11 +85,16 @@ export default function ArtifactsPage() {
                         {a.created_at ? relativeTime(a.created_at) : "—"}
                       </TableCell>
                       <TableCell className="text-right">
-                        <a href={`/api/worker${a.uri}`} download>
-                          <Button size="sm" variant="outline" className="gap-2">
-                            <Download className="h-4 w-4" /> 다운로드
-                          </Button>
-                        </a>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="gap-2"
+                          onClick={() => onDownload(a.kind)}
+                          disabled={busyKind === a.kind}
+                        >
+                          <Download className="h-4 w-4" />
+                          {busyKind === a.kind ? "받는 중..." : "다운로드"}
+                        </Button>
                       </TableCell>
                     </TableRow>
                   ))}

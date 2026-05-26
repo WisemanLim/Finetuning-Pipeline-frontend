@@ -34,8 +34,8 @@ export function Header({ title, subtitle }: { title: string; subtitle?: string }
 
       <div className="flex items-center gap-3">
         {user && (
-          <span className="text-sm text-muted-foreground hidden md:inline">
-            {user.email}
+          <span className="text-sm text-muted-foreground hidden md:inline" title={user.email}>
+            {user.name || user.email}
           </span>
         )}
         <Button variant="ghost" size="icon" aria-label="알림">

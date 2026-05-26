@@ -17,6 +17,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { ProgressStream } from "@/components/jobs/progress-stream";
 import { LossChart } from "@/components/jobs/loss-chart";
+import { HFUploadCard } from "@/components/jobs/hf-upload-card";
 import { JobProgressWS } from "@/lib/ws";
 import { api } from "@/lib/api";
 import { useWizard } from "@/lib/store";
@@ -71,6 +72,56 @@ export default function JobMonitorPage() {
 
   // WFP-0203 = HW 사양 매칭 규칙 없음 → 강제 진행 옵션 제공
   const canForce = isFailed && job?.error_code === "WFP-0203";
+
+  // WFP-030x = 환경 패키지 미설치/드라이버 문제 → 관리자에게 알림 권장
+  const isEnvError = isFailed && (job?.error_code?.startsWith("WFP-030") ?? false);
+
+  /** error_message에서 install 명령 추출 + uv 형태로 정규화. 없으면 null. */
+  const extractResolutionCmd = (msg: string | undefined): string | null => {
+    if (!msg) return null;
+    // 패턴: `pip install ... pkg[>=ver]` (역따옴표/일반 둘 다)
+    const m = msg.match(/`?(?:uv\s+)?pip install\s+(-U\s+)?(['"]?)([\w\-\.]+(?:[<>=!~]+[\d.]+)?)\2`?/i);
+    if (m) {
+      const pkg = m[3];
+      return `uv pip install -U '${pkg}' --python .venv/bin/python`;
+    }
+    // WFP-0302 — "학습 패키지 미설치: ['torch', 'transformers', ...]"
+    const m2 = msg.match(/미설치[:\s]+\[([^\]]+)\]/);
+    if (m2) {
+      const pkgs = m2[1].split(",").map((s) => s.trim().replace(/['"]/g, "")).filter(Boolean);
+      if (pkgs.length > 0) {
+        return `uv pip install -U ${pkgs.map((p) => `'${p}'`).join(" ")} --python .venv/bin/python`;
+      }
+    }
+    return null;
+  };
+
+  const notify = useMutation({
+    mutationFn: () => {
+      const resolutionCmd = extractResolutionCmd(job?.error_message);
+      return api.notifyAdmin({
+        job_id: jobId,
+        kind: isEnvError ? "env_missing" : "other",
+        error_code: job?.error_code,
+        message: `[${job?.error_code}] ${job?.error_message}`,
+        detail: {
+          ksic_section: job?.ksic_section,
+          task_type: job?.task_type,
+          model_hf_repo: job?.model_hf_repo,
+          current_stage: job?.current_stage,
+          resolution_cmd: resolutionCmd,
+          worker_cwd: "Finetuning-Pipeline-worker",
+        },
+      });
+    },
+    onSuccess: () => alert("관리자에게 알림을 보냈습니다."),
+    onError: (e: Error) => alert(`알림 송신 실패: ${e.message}`),
+  });
+
+  const handleNotifyAdmin = () => {
+    if (!confirm(`다음 내용을 관리자에게 알리시겠습니까?\n\n[${job?.error_code}] ${job?.error_message}`)) return;
+    notify.mutate();
+  };
 
   // 재실행 — 현재 잡의 spec을 위자드 store에 로드 후 step-1로 이동
   const handleRerun = () => {
@@ -141,6 +192,18 @@ export default function JobMonitorPage() {
                   <RefreshCw className="h-4 w-4" /> 강제 진행 재실행
                 </Button>
               )}
+              {isFailed && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={handleNotifyAdmin}
+                  disabled={notify.isPending}
+                  className="gap-2"
+                  title={isEnvError ? "환경 패키지 미설치 — 관리자가 자동 설치 가능" : "관리자에게 에러 전송"}
+                >
+                  📩 관리자에게 알림
+                </Button>
+              )}
               {isDone && (
                 <>
                   <Link href={`/jobs/${jobId}/playground`}>
@@ -166,6 +229,9 @@ export default function JobMonitorPage() {
           initialEvents={job?.events || []}
           liveStream={isRunning}
         />
+
+        {/* HF Hub 업로드 (DONE 상태만) */}
+        {isDone && <HFUploadCard jobId={jobId} />}
 
         {/* 손실 그래프 (Stage 7 진행 중) */}
         <Card>

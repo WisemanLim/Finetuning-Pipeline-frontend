@@ -107,6 +107,9 @@ export interface ProgressEvent {
     stage?: number;
     state?: string;
     step?: number;
+    total_steps?: number;
+    /** 0~1 — 현재 stage 안에서의 sub-progress (Stage 7 학습 등) */
+    stage_progress?: number;
     loss?: number;
     eval_loss?: number;
     epoch?: number;

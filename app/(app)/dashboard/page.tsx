@@ -17,6 +17,7 @@ import { api } from "@/lib/api";
 import { relativeTime } from "@/lib/utils";
 import { KSIC_SECTIONS } from "@/lib/ksic";
 import { EnvStatusCard } from "@/components/admin/env-status-card";
+import { NotificationsCard } from "@/components/admin/notifications-card";
 
 const STATE_VARIANT: Record<string, "default" | "secondary" | "destructive" | "success"> = {
   PENDING: "secondary",
@@ -61,6 +62,9 @@ export default function DashboardPage() {
       <Header title="대시보드" subtitle="잡 현황 및 시스템 리소스" />
 
       <div className="p-6 space-y-6">
+        {/* ADMIN — 사용자 알림 (잡 실패 등) */}
+        <NotificationsCard isAdmin={isAdmin} />
+
         {/* ADMIN — 학습 환경 진단 카드 (누락 패키지 있을 때만 노출) */}
         <EnvStatusCard isAdmin={isAdmin} />
 

@@ -207,6 +207,22 @@ export const api = {
         ksic_section: string; model_hf_repo: string; created_at: string | null;
       }>>(`/admin/jobs${qs}`);
     },
+    cancelJob: (jobId: string) =>
+      request<{ job_id: string; state: string }>(`/admin/jobs/${jobId}/cancel`, { method: "POST" }),
+    stats: () =>
+      request<{
+        users_total: number; users_active: number;
+        jobs_pending: number; jobs_running: number; jobs_done: number;
+        jobs_failed: number; jobs_cancelled: number;
+        queue_depth: number;
+        avg_wait_seconds: number | null;
+        avg_train_seconds: number | null;
+        disk_free_gb: number; gpu_count: number;
+        gpu_breakdown: Array<{
+          index: number; name: string;
+          vram_used_mb: number; vram_total_mb: number; util_pct: number;
+        }>;
+      }>("/admin/stats"),
     resources: () =>
       request<{
         gpus: Array<{
@@ -243,7 +259,96 @@ export const api = {
         status: string; returncode?: number; stdout?: string; stderr?: string;
         still_missing?: string[]; restart_required?: boolean; detail?: string;
       }>("/admin/env/install", { method: "POST" }),
+
+    // 사용자 → 관리자 알림 목록
+    listNotifications: (params?: { status?: string; kind?: string }) => {
+      const qs = new URLSearchParams();
+      if (params?.status) qs.set("status_filter", params.status);
+      if (params?.kind) qs.set("kind", params.kind);
+      const q = qs.toString();
+      return request<NotificationItem[]>(`/admin/notifications${q ? `?${q}` : ""}`);
+    },
+    patchNotification: (id: string, status: "new" | "read" | "resolved") =>
+      request<NotificationItem>(`/admin/notifications/${id}`, {
+        method: "PATCH",
+        body: JSON.stringify({ status }),
+      }),
   },
+
+  // 인증된 아티팩트 다운로드 — Bearer 헤더 첨부 필요해서 <a href>로 불가.
+  // blob 받아서 Object URL로 트리거. 파일명은 Content-Disposition에서 추출.
+  downloadArtifact: async (jobId: string, kind: string): Promise<void> => {
+    const token = tokenStore.get();
+    const res = await fetch(`${BASE}/jobs/${jobId}/artifacts/${kind}`, {
+      headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+    });
+    if (!res.ok) {
+      const text = await res.text();
+      throw new Error(`다운로드 실패 ${res.status}: ${text.slice(0, 200)}`);
+    }
+    // Content-Disposition: attachment; filename="model_card.md"
+    const cd = res.headers.get("content-disposition") || "";
+    const m = cd.match(/filename\*?=(?:UTF-8'')?"?([^";]+)"?/i);
+    const fallback = `artifact_${kind}`;
+    const filename = m ? decodeURIComponent(m[1]) : fallback;
+    const blob = await res.blob();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  },
+
+  // 잡 영구 삭제 (종료된 잡 DONE/FAILED/CANCELLED) — 진행 중 잡은 같은 endpoint가 cancel
+  deleteJob: (jobId: string) =>
+    request<{ job_id: string; state: string }>(`/jobs/${jobId}`, { method: "DELETE" }),
+
+  // 종료된 잡 일괄 삭제 (본인 잡 + ADMIN은 전체)
+  bulkDeleteJobs: (states: string[] = ["FAILED"]) =>
+    request<{ deleted: number; job_ids: string[] }>("/jobs/bulk-delete", {
+      method: "POST", body: JSON.stringify({ states }),
+    }),
+
+  // 잡 모델을 HuggingFace Hub에 업로드 (DONE 상태만)
+  uploadHF: (
+    jobId: string,
+    body: { repo_id: string; artifact_kind?: "adapter" | "merged"; private?: boolean; hf_token?: string },
+  ) =>
+    request<{ status: string; repo_id: string; repo_url: string; private: boolean }>(
+      `/jobs/${jobId}/upload-hf`,
+      { method: "POST", body: JSON.stringify(body) },
+    ),
+
+  // 사용자 → 관리자 알림 송신 (USER/ADMIN 무관)
+  notifyAdmin: (body: {
+    job_id?: string;
+    kind?: "env_missing" | "hw_mismatch" | "quota" | "other";
+    error_code?: string;
+    message: string;
+    detail?: Record<string, unknown>;
+  }) =>
+    request<{ id: string; status: string }>("/jobs/notify-admin", {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
 };
+
+export interface NotificationItem {
+  id: string;
+  user_id: string;
+  user_email: string;
+  job_id: string | null;
+  kind: string;
+  error_code: string | null;
+  message: string;
+  detail: Record<string, unknown>;
+  status: "new" | "read" | "resolved";
+  created_at: string;
+  resolved_at: string | null;
+  resolved_by: string | null;
+}
 
 export { ApiError };

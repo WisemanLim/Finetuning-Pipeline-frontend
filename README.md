@@ -87,6 +87,7 @@ make dev-web                # pnpm dev (HMR)
 make prod-web               # pnpm build → pnpm start
 
 # 하이브리드 — 인프라(docker) + web(호스트 PM2 관리)
+make docker-local-via-host  # Docker 없이 SQLite + PM2 start wfp-web-local (+ wfp-worker-local)
 make docker-dev-via-host    # = docker-infra + PM2 start wfp-web-dev (+ wfp-worker-dev)
 make docker-prod-via-host   # = docker-infra + pnpm build + PM2 start wfp-web-prod (+ wfp-worker-prod)
 

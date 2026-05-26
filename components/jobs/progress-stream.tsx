@@ -55,13 +55,23 @@ export function ProgressStream({
     setLogs(initialEvents.map((m) => ({ job_id: jobId, msg: m, extra: {} })));
   }, [jobId, initialEvents]);
 
+  const [stageProgress, setStageProgress] = useState(0); // 0~1 within current stage
+
   useEffect(() => {
     if (!liveStream) return;  // FAILED/DONE이면 WS 연결 안 함
     const ws = new JobProgressWS(jobId, {
       onOpen: () => setConnected(true),
       onClose: () => setConnected(false),
       onMessage: (ev) => {
-        if (typeof ev.extra?.stage === "number") setStage(ev.extra.stage);
+        if (typeof ev.extra?.stage === "number") {
+          setStage(ev.extra.stage);
+          setStageProgress(0);  // 새 stage 진입 시 sub-progress 초기화
+        }
+        // Stage 7 학습 중 sub-progress (0~1) 갱신
+        const sp = ev.extra?.stage_progress;
+        if (typeof sp === "number" && sp >= 0 && sp <= 1) {
+          setStageProgress(sp);
+        }
         setLogs((prev) => [...prev.slice(-199), ev]); // 최근 200개
       },
       reconnectMs: 3000,
@@ -76,7 +86,8 @@ export function ProgressStream({
     logEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [logs]);
 
-  const progressPct = Math.round((stage / 9) * 100);
+  // 진행률 — stage 기반 + 현재 stage 내 sub-progress 가중치 적용
+  const progressPct = Math.round(((stage + stageProgress) / 9) * 100);
 
   return (
     <Card>
@@ -91,7 +102,14 @@ export function ProgressStream({
       <CardContent className="space-y-4">
         <div>
           <div className="flex justify-between text-sm mb-2">
-            <span className="font-medium">{STAGE_LABELS[Math.min(stage, 9)]}</span>
+            <span className="font-medium">
+              {STAGE_LABELS[Math.min(stage, 9)]}
+              {stage === 7 && stageProgress > 0 && stageProgress < 1 && (
+                <span className="text-muted-foreground ml-2 font-normal">
+                  ({Math.round(stageProgress * 100)}%)
+                </span>
+              )}
+            </span>
             <span className="text-muted-foreground">{progressPct}%</span>
           </div>
           <Progress value={progressPct} />

@@ -10,27 +10,48 @@ import { NextRequest, NextResponse } from "next/server";
 
 const WORKER_URL = process.env.WFP_WORKER_URL || "http://localhost:8000";
 
+// 클라이언트로 전달할 응답 헤더 (특히 파일 다운로드 대응)
+const FORWARD_HEADERS = [
+  "content-type",
+  "content-length",
+  "content-disposition",
+  "content-encoding",
+  "cache-control",
+  "etag",
+  "last-modified",
+  "accept-ranges",
+];
+
 async function proxy(req: NextRequest, params: { path: string[] }) {
   const target = `${WORKER_URL}/${params.path.join("/")}${req.nextUrl.search}`;
 
-  // 요청 헤더 복사 후 인증 헤더 주입
+  // 요청 헤더 복사 후 hop-by-hop 헤더 제거
   const headers = new Headers(req.headers);
   headers.delete("host");
+  headers.delete("connection");
   // TODO: NextAuth 세션에서 user_id 추출하여 헤더로 전달
-  // headers.set("X-User-Id", session.user.id);
 
   const init: RequestInit = {
     method: req.method,
     headers,
-    body: ["GET", "HEAD"].includes(req.method) ? undefined : await req.text(),
+    body: ["GET", "HEAD"].includes(req.method) ? undefined : await req.arrayBuffer(),
+    // @ts-expect-error - Node fetch supports duplex for streaming
+    duplex: "half",
   };
 
   try {
     const res = await fetch(target, init);
-    const body = await res.text();
-    return new NextResponse(body, {
+    // 응답 헤더 화이트리스트 전달 — 바이너리/Content-Disposition 보존
+    const outHeaders = new Headers();
+    for (const h of FORWARD_HEADERS) {
+      const v = res.headers.get(h);
+      if (v) outHeaders.set(h, v);
+    }
+    // body 스트림 그대로 전달 (text() 호출 시 바이너리 깨짐)
+    return new NextResponse(res.body, {
       status: res.status,
-      headers: { "content-type": res.headers.get("content-type") || "application/json" },
+      statusText: res.statusText,
+      headers: outHeaders,
     });
   } catch (err) {
     return NextResponse.json(
