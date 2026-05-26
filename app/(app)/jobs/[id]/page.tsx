@@ -62,17 +62,36 @@ export default function JobMonitorPage() {
 
   const router = useRouter();
   const loadFromJob = useWizard((s) => s.loadFromJob);
+  const setWizard = useWizard((s) => s.set);
 
   const isRunning = job?.state === "RUNNING" || job?.state === "EVAL" || job?.state === "PENDING";
   const isDone = job?.state === "DONE";
   const isFailed = job?.state === "FAILED";
   const isCancelled = job?.state === "CANCELLED";
 
+  // WFP-0203 = HW 사양 매칭 규칙 없음 → 강제 진행 옵션 제공
+  const canForce = isFailed && job?.error_code === "WFP-0203";
+
   // 재실행 — 현재 잡의 spec을 위자드 store에 로드 후 step-1로 이동
   const handleRerun = () => {
     if (!job) return;
     loadFromJob(job);
+    setWizard({ allowForcePlan: false });
     router.push("/jobs/new/step-1-category");
+  };
+
+  // 강제 진행 재실행 — fallback plan 적용 동의 후 confirm step으로 직행
+  const handleForceRerun = () => {
+    if (!job) return;
+    const detail = `[${job.error_code}] ${job.error_message}\n\n` +
+      "현재 환경에 맞는 표준 플랜 규칙이 없습니다.\n" +
+      "최소 안전 fallback plan으로 강제 진행합니다.\n" +
+      "(QLoRA + int4 + 보수적 batch/seq, 학습 결과 보장 안 됨)\n\n" +
+      "계속하시겠습니까?";
+    if (!confirm(detail)) return;
+    loadFromJob(job);
+    setWizard({ allowForcePlan: true });
+    router.push("/jobs/new/step-5-confirm");
   };
 
   return (
@@ -95,9 +114,14 @@ export default function JobMonitorPage() {
                 <code className="text-xs">{jobId}</code>
               </div>
               {job?.error_message && (
-                <p className="text-sm text-destructive mt-2">
-                  [{job.error_code}] {job.error_message}
-                </p>
+                <div className="text-sm text-destructive mt-2 space-y-1">
+                  <p className="font-medium">[{job.error_code}] {job.error_message}</p>
+                  {canForce && (
+                    <p className="text-xs text-muted-foreground">
+                      현재 HW(GPU/RAM)에 맞는 표준 규칙이 없습니다. 우측 "강제 진행 재실행" 버튼으로 fallback plan 적용 가능.
+                    </p>
+                  )}
+                </div>
               )}
             </div>
 
@@ -110,6 +134,11 @@ export default function JobMonitorPage() {
               {(isFailed || isCancelled) && (
                 <Button size="sm" onClick={handleRerun} className="gap-2">
                   <RefreshCw className="h-4 w-4" /> 수정 후 재실행
+                </Button>
+              )}
+              {canForce && (
+                <Button variant="outline" size="sm" onClick={handleForceRerun} className="gap-2">
+                  <RefreshCw className="h-4 w-4" /> 강제 진행 재실행
                 </Button>
               )}
               {isDone && (

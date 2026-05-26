@@ -35,6 +35,7 @@ export default function Step5ConfirmPage() {
         data_source_path: wizard.dataSourcePath,
         keywords: wizard.keywords,
         train_override: wizard.useAdvanced ? wizard.trainOverride : {},
+        allow_force_plan: wizard.allowForcePlan,
       }),
     onSuccess: (data) => {
       wizard.reset();
@@ -44,6 +45,24 @@ export default function Step5ConfirmPage() {
 
   return (
     <div className="space-y-6">
+      {wizard.allowForcePlan && (
+        <Card className="border-destructive bg-destructive/5">
+          <CardContent className="pt-6">
+            <p className="text-sm font-medium text-destructive">⚠ 강제 진행 모드</p>
+            <p className="text-xs text-muted-foreground mt-1">
+              HW 규칙 매칭 실패로 fallback plan(보수적 QLoRA + int4) 적용. 학습 결과 보장 안 됨.
+              표준 진행을 원하면 이전 단계로 돌아가 설정을 조정하거나 해당 모드를 끄세요.
+            </p>
+            <button
+              type="button"
+              className="text-xs underline text-muted-foreground mt-2"
+              onClick={() => wizard.set({ allowForcePlan: false })}
+            >
+              강제 진행 모드 끄기
+            </button>
+          </CardContent>
+        </Card>
+      )}
       <Card>
         <CardHeader>
           <CardTitle className="text-lg">최종 확인</CardTitle>

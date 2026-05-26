@@ -34,6 +34,9 @@ export interface WizardState {
   };
   useAdvanced: boolean;
 
+  // 사용자가 WFP-0203 등 매칭 실패에도 fallback plan으로 강제 진행 동의 (PRD §8)
+  allowForcePlan: boolean;
+
   // 액션
   set: (patch: Partial<Omit<WizardState, "set" | "reset" | "loadFromJob">>) => void;
   reset: () => void;
@@ -54,6 +57,7 @@ const initial: Omit<WizardState, "set" | "reset" | "loadFromJob"> = {
   keywords: [],
   trainOverride: {},
   useAdvanced: false,
+  allowForcePlan: false,
 };
 
 export const useWizard = create<WizardState>()(

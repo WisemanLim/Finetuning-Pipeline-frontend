@@ -94,6 +94,8 @@ export interface JobCreateRequest {
   data_source_path?: string;
   keywords?: string[];
   train_override?: Record<string, unknown>;
+  /** HW 규칙 매칭 실패에도 fallback plan으로 강제 진행 (PRD §8). 사용자 confirm 후 true. */
+  allow_force_plan?: boolean;
 }
 
 export interface ProgressEvent {
