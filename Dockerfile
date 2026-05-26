@@ -11,7 +11,7 @@ FROM node:22-alpine AS deps
 # 빌드 의존성 (sharp 이미지 처리, native modules)
 RUN apk add --no-cache libc6-compat
 
-RUN corepack enable && corepack prepare pnpm@11.1.3 --activate
+RUN corepack enable && corepack prepare pnpm@10.18.0 --activate
 
 WORKDIR /app
 # pnpm v11 설정 파일도 함께 복사 (allowBuilds, .npmrc)
@@ -23,7 +23,7 @@ RUN CI=true pnpm install --frozen-lockfile || CI=true pnpm install
 # -----------------------------------------------------------------------------
 FROM node:22-alpine AS builder
 
-RUN corepack enable && corepack prepare pnpm@11.1.3 --activate
+RUN corepack enable && corepack prepare pnpm@10.18.0 --activate
 
 WORKDIR /app
 COPY --from=deps /app/node_modules ./node_modules
