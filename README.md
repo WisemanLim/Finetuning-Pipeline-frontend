@@ -351,3 +351,13 @@ Finetuning-Pipeline-frontend/
 
 - `JobStatus.last_event_at`
 - `CatalogItem` / `CatalogCreatePayload` / `PresetItem` / `PresetCreatePayload` / `DataSourceItem` / `DataSourceCreatePayload` / `HfSearchResult`
+
+### tqdm 라인 — 모든 stage 대응 (UPDATED)
+
+- [components/jobs/progress-stream.tsx](components/jobs/progress-stream.tsx) — stage 게이트(`stage===7 || stage===8`) 제거. `trainInfo.desc` 필드 추가.
+- WS `extra.tqdm_desc` 값이 변경되면 elapsed/ETA 자동 재시작 (예: `Loading weights` → `Generating train split`).
+- 라인 prefix 에 desc 표시:
+  ```
+  Loading weights  37%|███▋    | 124/338 [00:10<00:08, 24.15it/s]
+  ```
+- worker `tqdm_bridge` 가 transformers/datasets/huggingface_hub 의 stdout tqdm 까지 모두 발행하므로, Stage 4(모델 로드) / Stage 5(데이터셋 generate/map/tokenize) 등 모든 단계에서 진행 라인 노출.
