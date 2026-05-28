@@ -8,10 +8,10 @@
  *
  * SSR hydration 미스매치 회피용으로 mount 후에만 렌더.
  */
-import Link from "next/link";
-import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { tokenStore } from "@/lib/api";
+import Link from "next/link";
+import { useEffect, useState } from "react";
 
 export function MarketingNav() {
   const [authed, setAuthed] = useState<boolean | null>(null);
@@ -28,9 +28,9 @@ export function MarketingNav() {
   if (authed) {
     return (
       <>
-        <Link href="/pricing" className="text-sm text-muted-foreground hover:text-foreground">
+        {/* <Link href="/pricing" className="text-sm text-muted-foreground hover:text-foreground">
           요금
-        </Link>
+        </Link> */}
         <Link href="/dashboard">
           <Button size="sm">대시보드</Button>
         </Link>
@@ -40,11 +40,13 @@ export function MarketingNav() {
 
   return (
     <>
-      <Link href="/pricing" className="text-sm text-muted-foreground hover:text-foreground">
+      {/* <Link href="/pricing" className="text-sm text-muted-foreground hover:text-foreground">
         요금
-      </Link>
+      </Link> */}
       <Link href="/login">
-        <Button variant="ghost" size="sm">로그인</Button>
+        <Button variant="ghost" size="sm">
+          로그인
+        </Button>
       </Link>
       <Link href="/signup">
         <Button size="sm">시작하기</Button>

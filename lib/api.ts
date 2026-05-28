@@ -8,10 +8,17 @@
  */
 
 import type {
+  CatalogCreatePayload,
+  CatalogItem,
+  DataSourceCreatePayload,
+  DataSourceItem,
   HWCaps,
+  HfSearchResult,
   JobCreateRequest,
   JobStatus,
   ModelCard,
+  PresetCreatePayload,
+  PresetItem,
 } from "@/types/api";
 
 const BASE = "/api/proxy";
@@ -62,12 +69,22 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
     } catch {
       payload = raw;
     }
-    // 401 → 토큰 제거 + 로그인 리다이렉트 (세션 만료 시)
+    // 401 → 토큰 제거 + 로그인 리다이렉트.
+    // 미로그인(토큰 없음) 상태에서 보호 API 직접 호출한 경우에도 강제 리다이렉트.
     if (res.status === 401) {
-      const hadToken = !!tokenStore.get();
       tokenStore.clear();
-      if (hadToken && typeof window !== "undefined") {
-        window.location.href = "/login";
+      if (typeof window !== "undefined") {
+        // 로그인 페이지 자체 / 공개 페이지에서는 리다이렉트 생략 (무한 루프 방지)
+        const path = window.location.pathname;
+        const isPublic =
+          path.startsWith("/login") ||
+          path.startsWith("/signup") ||
+          path === "/" ||
+          path.startsWith("/marketing");
+        if (!isPublic) {
+          const cb = encodeURIComponent(path + window.location.search);
+          window.location.href = `/login?callbackUrl=${cb}`;
+        }
       }
     }
     throw new ApiError(
@@ -185,6 +202,16 @@ export const api = {
   getJob: (jobId: string) => request<JobStatus>(`/jobs/${jobId}`),
   cancelJob: (jobId: string) =>
     request<{ job_id: string; state: string }>(`/jobs/${jobId}`, { method: "DELETE" }),
+  advanceJob: (jobId: string) =>
+    request<{ advanced_from: number; new_start_stage: number | null; restarted: boolean }>(
+      `/jobs/${jobId}/advance`,
+      { method: "POST" },
+    ),
+  finalizeJob: (jobId: string) =>
+    request<{ finalized_at_stage: number; checkpoint_dir: string | null; state: string }>(
+      `/jobs/${jobId}/finalize`,
+      { method: "POST" },
+    ),
   artifactUrl: (jobId: string, kind: string): string => {
     const token = tokenStore.get();
     const t = token ? `?token=${encodeURIComponent(token)}` : "";
@@ -231,13 +258,67 @@ export const api = {
         }>;
         queue_pending: number; queue_running: number; disk_free_gb: number;
       }>("/admin/resources"),
-    listCatalog: () => request<Array<Record<string, unknown>>>("/admin/catalog/models"),
-    createCatalog: (body: Record<string, unknown>) =>
-      request("/admin/catalog/models", { method: "POST", body: JSON.stringify(body) }),
-    patchCatalog: (id: string, body: Record<string, unknown>) =>
-      request(`/admin/catalog/models/${id}`, { method: "PATCH", body: JSON.stringify(body) }),
+    // ── 카탈로그: 모델 ──
+    listCatalog: () => request<CatalogItem[]>("/admin/catalog/models"),
+    createCatalog: (body: CatalogCreatePayload) =>
+      request<CatalogItem>("/admin/catalog/models", {
+        method: "POST",
+        body: JSON.stringify(body),
+      }),
+    patchCatalog: (id: string, body: Partial<CatalogCreatePayload> & { is_active?: boolean }) =>
+      request<CatalogItem>(`/admin/catalog/models/${id}`, {
+        method: "PATCH",
+        body: JSON.stringify(body),
+      }),
     deleteCatalog: (id: string) =>
-      request(`/admin/catalog/models/${id}`, { method: "DELETE" }),
+      request<void>(`/admin/catalog/models/${id}`, { method: "DELETE" }),
+
+    // ── 카탈로그: 카테고리 프리셋 ──
+    listPresets: () => request<PresetItem[]>("/admin/presets"),
+    createPreset: (body: PresetCreatePayload) =>
+      request<PresetItem>("/admin/presets", {
+        method: "POST",
+        body: JSON.stringify(body),
+      }),
+    patchPreset: (id: string, body: Partial<PresetCreatePayload> & { is_active?: boolean }) =>
+      request<PresetItem>(`/admin/presets/${id}`, {
+        method: "PATCH",
+        body: JSON.stringify(body),
+      }),
+    deletePreset: (id: string) =>
+      request<void>(`/admin/presets/${id}`, { method: "DELETE" }),
+
+    // ── 카탈로그: 도메인 화이트리스트 ──
+    listDataSources: () => request<DataSourceItem[]>("/admin/data-sources"),
+    createDataSource: (body: DataSourceCreatePayload) =>
+      request<DataSourceItem>("/admin/data-sources", {
+        method: "POST",
+        body: JSON.stringify(body),
+      }),
+    patchDataSource: (id: string, body: Partial<DataSourceCreatePayload> & { is_active?: boolean }) =>
+      request<DataSourceItem>(`/admin/data-sources/${id}`, {
+        method: "PATCH",
+        body: JSON.stringify(body),
+      }),
+    deleteDataSource: (id: string) =>
+      request<void>(`/admin/data-sources/${id}`, { method: "DELETE" }),
+
+    // ── HF Hub 검색 (모델 추가 보조) ──
+    hfSearch: (q: string, limit = 10) =>
+      request<HfSearchResult[]>(
+        `/admin/hf-search?q=${encodeURIComponent(q)}&limit=${limit}`,
+      ),
+
+    // ── 카탈로그 기본값 시드 (_ALL_MODELS + PRD 프리셋 + allow-all) ──
+    seedDefaults: () =>
+      request<{
+        models_added: number;
+        presets_added: number;
+        whitelist_added: number;
+        models_existing: number;
+        presets_existing: number;
+        whitelist_existing: number;
+      }>("/admin/catalog/seed-defaults", { method: "POST" }),
     audit: (limit = 100) =>
       request<Array<{
         id: string; ts: string; actor_email: string; action: string;
@@ -291,6 +372,30 @@ export const api = {
     const m = cd.match(/filename\*?=(?:UTF-8'')?"?([^";]+)"?/i);
     const fallback = `artifact_${kind}`;
     const filename = m ? decodeURIComponent(m[1]) : fallback;
+    const blob = await res.blob();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  },
+
+  // Stage 5 수집 원시 JSONL 다운로드. downloadArtifact 와 동일한 blob 패턴.
+  downloadRawData: async (jobId: string): Promise<void> => {
+    const token = tokenStore.get();
+    const res = await fetch(`${BASE}/jobs/${jobId}/data/raw`, {
+      headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+    });
+    if (!res.ok) {
+      const text = await res.text();
+      throw new Error(`다운로드 실패 ${res.status}: ${text.slice(0, 200)}`);
+    }
+    const cd = res.headers.get("content-disposition") || "";
+    const m = cd.match(/filename\*?=(?:UTF-8'')?"?([^";]+)"?/i);
+    const filename = m ? decodeURIComponent(m[1]) : `${jobId.slice(0, 8)}-collected.jsonl`;
     const blob = await res.blob();
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");

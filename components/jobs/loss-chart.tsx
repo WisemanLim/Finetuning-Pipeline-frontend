@@ -20,14 +20,14 @@ interface Point {
 export function LossChart({ data }: { data: Point[] }) {
   if (data.length === 0) {
     return (
-      <div className="h-64 flex items-center justify-center text-sm text-muted-foreground">
+      <div className="h-44 flex items-center justify-center text-sm text-muted-foreground">
         손실 데이터 대기 중...
       </div>
     );
   }
 
   return (
-    <ResponsiveContainer width="100%" height={260}>
+    <ResponsiveContainer width="100%" height={170}>
       <LineChart data={data} margin={{ top: 10, right: 20, left: 0, bottom: 0 }}>
         <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
         <XAxis dataKey="step" stroke="hsl(var(--muted-foreground))" tick={{ fontSize: 12 }} />

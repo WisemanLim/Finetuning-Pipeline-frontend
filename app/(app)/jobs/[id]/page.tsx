@@ -22,7 +22,7 @@ import { JobProgressWS } from "@/lib/ws";
 import { api } from "@/lib/api";
 import { useWizard } from "@/lib/store";
 import { useEffect } from "react";
-import { XCircle, Download, Play, RefreshCw } from "lucide-react";
+import { XCircle, Download, Play, RefreshCw, FileDown, SkipForward, FastForward } from "lucide-react";
 
 export default function JobMonitorPage() {
   const params = useParams<{ id: string }>();
@@ -69,6 +69,83 @@ export default function JobMonitorPage() {
   const isDone = job?.state === "DONE";
   const isFailed = job?.state === "FAILED";
   const isCancelled = job?.state === "CANCELLED";
+
+  // Stage 5 이상 진입 + SYNTHETIC("synth") 외 모드면 원시 수집 데이터 다운로드 가능
+  const canDownloadRaw =
+    (job?.current_stage ?? 0) >= 5 && job?.data_source_mode !== "synth";
+
+  const handleDownloadRaw = async () => {
+    try {
+      await api.downloadRawData(jobId);
+    } catch (e) {
+      alert((e as Error).message);
+    }
+  };
+
+  // 멈춤 감지 — RUNNING/EVAL/PENDING 에서 5분간 이벤트 부재 시 노출
+  const STUCK_THRESHOLD_MS = 5 * 60 * 1000;
+  const lastEventAt = job?.last_event_at ? Date.parse(job.last_event_at) : NaN;
+  const stuckMs =
+    isRunning && Number.isFinite(lastEventAt) ? Date.now() - lastEventAt : 0;
+  const isStuck = isRunning && stuckMs > STUCK_THRESHOLD_MS;
+  const stuckMinutes = Math.floor(stuckMs / 60000);
+
+  // 작업 계속(advance) — 현재 stage 강제 스킵 후 다음 stage 재실행
+  const advance = useMutation({
+    mutationFn: () => api.advanceJob(jobId),
+    onSuccess: (data) => {
+      refetch();
+      if (data.restarted) {
+        alert(`Stage ${data.advanced_from} 스킵 → Stage ${data.new_start_stage} 부터 재개`);
+      } else {
+        alert(`마지막 stage 도달 — 잡 완료 처리됨`);
+      }
+    },
+    onError: (e: Error) => alert(`작업 계속 실패: ${e.message}`),
+  });
+
+  // 조기 종료(finalize) — Stage 7 산출물로 DONE 마킹, 평가/패키징 스킵
+  const finalize = useMutation({
+    mutationFn: () => api.finalizeJob(jobId),
+    onSuccess: (data) => {
+      refetch();
+      alert(
+        data.checkpoint_dir
+          ? `Stage ${data.finalized_at_stage} 까지 산출물로 완료 처리. 체크포인트: ${data.checkpoint_dir}`
+          : `Stage ${data.finalized_at_stage} 에서 완료 처리. 체크포인트 없음.`,
+      );
+    },
+    onError: (e: Error) => alert(`조기 종료 실패: ${e.message}`),
+  });
+
+  const handleAdvance = () => {
+    const stage = job?.current_stage ?? 0;
+    const warnMap: Record<number, string> = {
+      2: "Stage 2(HW) 스킵 — fallback plan 적용 안 됨. 위험.",
+      3: "Stage 3(환경 검사) 스킵 — 환경 경고 무시.",
+      4: "Stage 4(모델 다운로드) 스킵 — 모델 없이 진행 불가. 후속 stage 실패 예상.",
+      5: "Stage 5(데이터) 스킵 — 학습 데이터 없이 진행 불가. 실패 예상.",
+      6: "Stage 6(설정) 스킵 — 학습 설정 없이 진행 불가.",
+      7: "Stage 7(학습) 스킵 — 체크포인트 없으면 Stage 8/9 실패.",
+      8: "Stage 8(평가) 스킵 — 평가 지표 누락. Stage 9 진행.",
+      9: "Stage 9(패키징) 스킵 — 산출물 zip 누락. DONE 처리됨.",
+    };
+    const detail = warnMap[stage] ?? "현재 stage 의 산출물 누락 가능.";
+    if (!confirm(`작업을 계속 진행할까요?\n\n${detail}\n\nStage ${stage} → Stage ${stage + 1}`)) return;
+    advance.mutate();
+  };
+
+  const handleFinalize = () => {
+    const stage = job?.current_stage ?? 0;
+    if (
+      !confirm(
+        `잡을 조기 종료할까요?\n\n현재 stage ${stage} 에서 멈춤 — DONE 마킹. 평가/패키징 스킵.\n` +
+        `Stage 7 까지 진행됐다면 체크포인트로 추론 가능.`,
+      )
+    )
+      return;
+    finalize.mutate();
+  };
 
   // WFP-0203 = HW 사양 매칭 규칙 없음 → 강제 진행 옵션 제공
   const canForce = isFailed && job?.error_code === "WFP-0203";
@@ -177,10 +254,54 @@ export default function JobMonitorPage() {
             </div>
 
             <div className="flex gap-2">
+              {canDownloadRaw && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={handleDownloadRaw}
+                  className="gap-2"
+                  title="Stage 5 수집된 원시 JSONL 다운로드"
+                >
+                  <FileDown className="h-4 w-4" /> 수집 데이터
+                </Button>
+              )}
               {isRunning && (
                 <Button variant="destructive" size="sm" onClick={() => cancel.mutate()} className="gap-2">
                   <XCircle className="h-4 w-4" /> 취소
                 </Button>
+              )}
+              {isRunning && (
+                <>
+                  {isStuck && (
+                    <Badge variant="destructive" className="self-center">
+                      멈춤 감지 · {stuckMinutes}분 무이벤트
+                    </Badge>
+                  )}
+                  <Button
+                    size="sm"
+                    variant={isStuck ? "default" : "outline"}
+                    onClick={handleAdvance}
+                    disabled={advance.isPending}
+                    className="gap-2"
+                    title={
+                      isStuck
+                        ? `마지막 이벤트 ${stuckMinutes}분 전 — 현재 stage 스킵`
+                        : "현재 stage 강제 스킵 → 다음 stage 재실행"
+                    }
+                  >
+                    <SkipForward className="h-4 w-4" /> 작업 계속
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={handleFinalize}
+                    disabled={finalize.isPending}
+                    className="gap-2"
+                    title="현재 산출물로 DONE 처리 (평가/패키징 스킵)"
+                  >
+                    <FastForward className="h-4 w-4" /> 조기 종료
+                  </Button>
+                </>
               )}
               {(isFailed || isCancelled) && (
                 <Button size="sm" onClick={handleRerun} className="gap-2">

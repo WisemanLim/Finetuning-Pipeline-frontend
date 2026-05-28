@@ -82,6 +82,8 @@ export interface JobStatus {
   train_override?: Record<string, unknown>;
   /** 과거 이벤트 — WS 미연결 (FAILED/완료) 상태에서 진행 로그 확인용 */
   events?: string[];
+  /** 마지막 WS 이벤트 timestamp (ISO8601). 멈춤 감지에 사용. */
+  last_event_at?: string | null;
 }
 
 export interface JobCreateRequest {
@@ -125,4 +127,76 @@ export interface ModelCard {
   license: string;
   hw_min_vram_gb: number;
   tags: string[];
+}
+
+// ─────────────────────────────────────────
+// 관리자 카탈로그 — admin CRUD 응답/요청 타입
+// ─────────────────────────────────────────
+
+export interface CatalogItem {
+  id: string;
+  hf_repo: string;
+  params_b: number;
+  license: string;
+  hw_min_vram_gb: number;
+  language: string[];
+  tags: string[];
+  priority: number;
+  is_active: boolean;
+}
+
+export interface CatalogCreatePayload {
+  hf_repo: string;
+  params_b: number;
+  license?: string;
+  hw_min_vram_gb: number;
+  language?: string[];
+  tags?: string[];
+  priority?: number;
+}
+
+export interface PresetItem {
+  id: string;
+  name: string;
+  ksic_section: string;
+  task_type: string;
+  recommended_models: string[];
+  default_config: Record<string, unknown>;
+  description: string | null;
+  is_active: boolean;
+}
+
+export interface PresetCreatePayload {
+  name: string;
+  ksic_section: string;
+  task_type: string;
+  recommended_models?: string[];
+  default_config?: Record<string, unknown>;
+  description?: string | null;
+}
+
+export interface DataSourceItem {
+  id: string;
+  name: string;
+  source_type: string;
+  url_pattern: string;
+  description: string | null;
+  is_active: boolean;
+}
+
+export interface DataSourceCreatePayload {
+  name: string;
+  source_type: "hf_datasets" | "url" | "api" | "upload";
+  url_pattern: string;
+  description?: string | null;
+}
+
+/** HF Hub 검색 결과 (admin.hfSearch) */
+export interface HfSearchResult {
+  hf_repo: string;
+  downloads: number;
+  likes: number;
+  tags: string[];
+  /** 추정 파라미터 수 (B 단위). HF Hub 메타에서 추출 가능하면 채움. */
+  params_b?: number | null;
 }

@@ -309,3 +309,45 @@ Finetuning-Pipeline-frontend/
 - [ ] 다크 모드 토글 (이미 globals.css에 `.dark` 클래스 정의됨)
 - [ ] Tauri 데스크탑 패키징
 - [ ] E2E 테스트 (Playwright)
+
+---
+
+## 최근 변경 (2026-05)
+
+### 잡 상세 페이지
+
+- **tqdm 스타일 라인** — `components/jobs/progress-stream.tsx` 상단 sticky 라인. `[N%]|██▌    | step/total [elapsed<eta, rate]` 포맷. Stage 7 학습 / Stage 8 평가 추론 진행 중 표시. Worker 에서 받는 `extra.step` / `extra.total_steps` 사용.
+- **수집 데이터 다운로드** — Stage 5 진입 후 SYNTHETIC 외 모드에서 "수집 데이터" 버튼. `GET /jobs/{id}/data/raw` 로 raw JSONL blob 다운로드.
+- **작업 계속 / 조기 종료** — RUNNING/EVAL/PENDING 상태에서 항상 노출. `last_event_at` 5분 경과 시 빨간 "멈춤 감지" 배지 + 작업 계속 버튼 강조. Stage 별 차별화된 confirm 경고.
+- **잡 박스 높이 축소** — 실시간 진행 상황 `h-96 → h-64`, 학습 손실 `260 → 170 px` (≈ 2/3).
+- **null-safety 패치** — `log.extra.loss` 가 `null` 인 이벤트에서 `.toFixed()` 크래시 방지 (`typeof === "number"` 가드).
+
+### 인증 가드 (NEW)
+
+- **`components/auth-guard.tsx`** — 클라이언트 사이드 가드. JWT 가 localStorage 기반이라 Next 미들웨어가 직접 검사 못 함 → 레이아웃에서 사용.
+  - 토큰 없음 → `/login?callbackUrl=현재경로` 리다이렉트.
+  - `/auth/me` 호출 → 401 시 `lib/api.ts` 의 `request()` 가 자동 리다이렉트.
+  - `requireAdmin` prop → `role !== "ADMIN"` 일 때 403 안내 화면.
+- **레이아웃 적용** — `app/(app)/layout.tsx` 에 `<AuthGuard>`, `app/(admin)/layout.tsx` 에 `<AuthGuard requireAdmin>`.
+- **`request()` 401 처리 보강** — 기존엔 `hadToken === true` 일 때만 리다이렉트 → 미로그인 직접 URL 접근 시 "LOADING / 끊김" 화면에 머무름. 항상 리다이렉트로 변경 (login/signup/marketing 경로는 무한 루프 방지로 제외).
+
+### 카탈로그 관리 (admin)
+
+- **`app/(admin)/admin/catalog/page.tsx` 전면 재작성** (79 → 800+ 줄). 3 탭:
+  - **모델** — `/admin/catalog/models` CRUD + HF Hub 검색 자동완성 (2자 디바운스, 클릭으로 hf_repo/params_b/tags 자동 채움).
+  - **카테고리 프리셋** — `/admin/presets` CRUD. 추천 모델은 카탈로그 체크박스 + 수동 입력 지원. `default_config` JSON textarea.
+  - **도메인 화이트리스트** — `/admin/data-sources` CRUD. source_type select (`url|hf_datasets|api|upload`).
+- **기본값 가져오기 버튼** — 우측 상단. `POST /admin/catalog/seed-defaults` 호출 → 빈 카탈로그에 시드 14건 + 프리셋 9건 + allow-all 1건 (중복 skip).
+- **`components/ui/dialog.tsx`** — Radix Dialog 래퍼 (shadcn 표준) 신규 추가.
+
+### API 헬퍼 (lib/api.ts)
+
+- `advanceJob` / `finalizeJob` / `downloadRawData`
+- `admin.listPresets` / `createPreset` / `patchPreset` / `deletePreset`
+- `admin.listDataSources` / `createDataSource` / `patchDataSource` / `deleteDataSource`
+- `admin.hfSearch` / `admin.seedDefaults`
+
+### 타입 추가 (types/api.ts)
+
+- `JobStatus.last_event_at`
+- `CatalogItem` / `CatalogCreatePayload` / `PresetItem` / `PresetCreatePayload` / `DataSourceItem` / `DataSourceCreatePayload` / `HfSearchResult`
