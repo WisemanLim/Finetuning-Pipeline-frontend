@@ -352,6 +352,25 @@ Finetuning-Pipeline-frontend/
 - `JobStatus.last_event_at`
 - `CatalogItem` / `CatalogCreatePayload` / `PresetItem` / `PresetCreatePayload` / `DataSourceItem` / `DataSourceCreatePayload` / `HfSearchResult`
 
+### WebSocket 운영 (UPDATED)
+
+- 브라우저 → worker `/ws/{job_id}` **직접 연결**. Next.js 는 WS proxy 안 함.
+- [lib/ws.ts](lib/ws.ts) `resolveWsBase()` 우선순위:
+  1. `NEXT_PUBLIC_WS_BASE` (전체 URL) — 리버스 프록시 환경.
+  2. 페이지 host 가 `localhost` / `127.x` → `ws://<host>:8000`.
+  3. 그 외 — `<scheme>://<host>:<NEXT_PUBLIC_WORKER_WS_PORT 또는 8000>`. scheme 은 페이지 protocol 에서 유도 (http→ws / https→wss).
+- 이전 버그: `wss://<host>:3000` 강제 → TLS 미사용/포트 오류 양쪽 모두 실패.
+- ⚠ `NEXT_PUBLIC_*` 은 **빌드 타임 inline**. 값 변경 시 `pnpm build` 재실행 필요.
+
+**시나리오 별 .env 값**
+
+| 운영 형태 | 값 |
+|---|---|
+| Traefik IP 운영 (`compose.prod`, /ws PathPrefix 라벨 있음) | `NEXT_PUBLIC_WS_BASE=ws://<IP>` |
+| Traefik 도메인 + TLS | `NEXT_PUBLIC_WS_BASE=wss://<domain>` |
+| PM2 직접 (`:3000` Next + `:8000` worker 공개) | 미지정 (자동 추론). 필요 시 `NEXT_PUBLIC_WORKER_WS_PORT=8000` |
+| 로컬 dev | 미지정 — `ws://localhost:8000` 자동 |
+
 ### tqdm 라인 — 모든 stage 대응 (UPDATED)
 
 - [components/jobs/progress-stream.tsx](components/jobs/progress-stream.tsx) — stage 게이트(`stage===7 || stage===8`) 제거. `trainInfo.desc` 필드 추가.

@@ -7,6 +7,37 @@
 
 import type { ProgressEvent } from "@/types/api";
 
+/**
+ * WS base URL 결정.
+ *
+ * 우선순위:
+ *  1. `NEXT_PUBLIC_WS_BASE` — 전체 URL 명시 (예: `wss://wfp.example.com`).
+ *     리버스 프록시로 `/ws/*` 가 worker 로 라우팅되는 운영 환경에서 사용.
+ *  2. 로컬 dev (host = localhost / 127.x) → `ws://<host>:8000`.
+ *  3. 운영 기본 — 페이지 호스트 + `NEXT_PUBLIC_WORKER_WS_PORT` (기본 8000).
+ *     scheme 은 페이지 protocol 에서 유도 (http→ws / https→wss).
+ *
+ * 운영 노출 주의: worker 포트(기본 8000) 가 브라우저에서 접근 가능해야 함.
+ *  - docker-compose 운영 — `ports: ["8000:8000"]` 추가 또는 Traefik/nginx 로
+ *    `/ws/*` 만 worker 로 프록시 후 `NEXT_PUBLIC_WS_BASE` 명시.
+ */
+function resolveWsBase(): string {
+  const envBase = process.env.NEXT_PUBLIC_WS_BASE;
+  if (envBase) return envBase.replace(/\/$/, "");
+
+  if (typeof window === "undefined") return "ws://localhost:8000";
+
+  const host = window.location.hostname;
+  const proto = window.location.protocol === "https:" ? "wss" : "ws";
+
+  if (host === "localhost" || host.startsWith("127.")) {
+    return `${proto}://${host}:8000`;
+  }
+
+  const port = process.env.NEXT_PUBLIC_WORKER_WS_PORT || "8000";
+  return `${proto}://${host}:${port}`;
+}
+
 export interface WsOptions {
   onMessage: (ev: ProgressEvent) => void;
   onOpen?: () => void;
@@ -24,13 +55,7 @@ export class JobProgressWS {
   constructor(private jobId: string, private opts: WsOptions) {}
 
   connect(): void {
-    // Next.js dev에서는 ml-worker 직접 (rewrites는 HTTP만 적용됨)
-    const base =
-      typeof window !== "undefined" && window.location.host.includes("localhost")
-        ? "ws://localhost:8000"
-        : "wss://" + (typeof window !== "undefined" ? window.location.host : "");
-
-    this.ws = new WebSocket(`${base}/ws/${this.jobId}`);
+    this.ws = new WebSocket(`${resolveWsBase()}/ws/${this.jobId}`);
 
     this.ws.onopen = () => this.opts.onOpen?.();
     this.ws.onclose = () => {
