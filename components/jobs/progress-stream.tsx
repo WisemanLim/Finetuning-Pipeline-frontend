@@ -43,8 +43,10 @@ interface TrainInfo {
   step: number;
   total: number;
   pct: number;        // 0~1
-  startedAt: number;  // ms epoch — 첫 step 이벤트 시각
+  startedAt: number;  // ms epoch — 현재 desc 의 첫 step 이벤트 시각
   lastUpdate: number; // ms epoch — 최신 step 이벤트 시각
+  /** tqdm 출처 라벨 (예: "Loading weights", "Map", "Tokenizing"). */
+  desc?: string;
 }
 
 /** mm:ss 또는 hh:mm:ss 포맷. */
@@ -111,18 +113,28 @@ export function ProgressStream({
         if (typeof sp === "number" && sp >= 0 && sp <= 1) {
           setStageProgress(sp);
         }
-        // Stage 7 step-level 진행 정보 갱신 (tqdm 라인용)
+        // step-level 진행 정보 갱신 (tqdm 라인용).
+        // transformers/datasets/huggingface_hub 의 tqdm 도 worker tqdm_bridge 가
+        // step/total_steps/tqdm_desc 를 emit → 모든 stage 에서 라인 노출 가능.
         const step = ev.extra?.step;
         const total = ev.extra?.total_steps;
+        const tqdmDesc =
+          typeof ev.extra?.tqdm_desc === "string"
+            ? (ev.extra.tqdm_desc as string)
+            : undefined;
         if (typeof step === "number" && typeof total === "number" && total > 0) {
           setTrainInfo((prev) => {
             const now = Date.now();
+            // desc 가 바뀌면 새 progress bar — elapsed/ETA 재시작
+            const sameDesc = prev?.desc === tqdmDesc;
+            const startedAt = prev && sameDesc ? prev.startedAt : now;
             return {
               step,
               total,
               pct: step / total,
-              startedAt: prev?.startedAt ?? now,
+              startedAt,
               lastUpdate: now,
+              desc: tqdmDesc ?? prev?.desc,
             };
           });
         }
@@ -143,10 +155,10 @@ export function ProgressStream({
   // 전체 진행률 — stage 기반 + 현재 stage 내 sub-progress 가중치 적용
   const progressPct = Math.round(((stage + stageProgress) / 9) * 100);
 
-  // tqdm 스타일 라인 (Stage 7 학습 / Stage 8 평가 추론 진행 시 표시)
+  // tqdm 스타일 라인 — 모든 stage 에서 tqdm 진행 가능 (모델 로딩 / 데이터셋 map 등).
   let tqdmLine: string | null = null;
-  if ((stage === 7 || stage === 8) && trainInfo && trainInfo.total > 0) {
-    const { step, total, pct, startedAt, lastUpdate } = trainInfo;
+  if (trainInfo && trainInfo.total > 0) {
+    const { step, total, pct, startedAt, lastUpdate, desc } = trainInfo;
     const elapsedSec = Math.max(0, (lastUpdate - startedAt) / 1000);
     const rate = step > 0 && elapsedSec > 0 ? step / elapsedSec : 0; // it/s
     const remaining = Math.max(0, total - step);
@@ -158,7 +170,8 @@ export function ProgressStream({
           ? `${rate.toFixed(2)}it/s`
           : `${(1 / rate).toFixed(2)}s/it`
         : "?it/s";
-    tqdmLine = `${pctStr}%|${makeBar(pct)}| ${step}/${total} [${fmtTime(elapsedSec)}<${fmtTime(etaSec)}, ${rateStr}]`;
+    const prefix = desc ? `${desc} ` : "";
+    tqdmLine = `${prefix}${pctStr}%|${makeBar(pct)}| ${step}/${total} [${fmtTime(elapsedSec)}<${fmtTime(etaSec)}, ${rateStr}]`;
   }
 
   return (
