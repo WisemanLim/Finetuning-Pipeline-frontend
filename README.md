@@ -68,6 +68,9 @@ pnpm start    # 프로덕션 서버
 
 워커 + 프론트 + DB/Redis/MinIO를 전체 스택으로 기동하려면 `Finetuning-Pipeline-ops`의 Makefile 사용.
 
+> **모든 `make` 명령은 `Finetuning-Pipeline-ops` 디렉토리에서 실행.**
+> Frontend 저장소 자체에는 Makefile 없음. 통일된 운영 명령은 ops에 모여 있음.
+
 #### 전체 컨테이너 모드
 
 ```bash
@@ -338,6 +341,7 @@ Finetuning-Pipeline-frontend/
   - **카테고리 프리셋** — `/admin/presets` CRUD. 추천 모델은 카탈로그 체크박스 + 수동 입력 지원. `default_config` JSON textarea.
   - **도메인 화이트리스트** — `/admin/data-sources` CRUD. source_type select (`url|hf_datasets|api|upload`).
 - **기본값 가져오기 버튼** — 우측 상단. `POST /admin/catalog/seed-defaults` 호출 → 빈 카탈로그에 시드 14건 + 프리셋 9건 + allow-all 1건 (중복 skip).
+- **자동 갱신 버튼** — '기본값 가져오기' 옆. `POST /admin/catalog/auto-refresh` 호출 → HF Hub trending 기반 신규 모델 INSERT + KSIC 섹션별 프리셋 추천 모델 재계산. 기존 모델 행은 운영자 편집 보존. CLI 동등 명령: `make -C <ops> catalog-refresh` (cron 친화).
 - **`components/ui/dialog.tsx`** — Radix Dialog 래퍼 (shadcn 표준) 신규 추가.
 
 ### API 헬퍼 (lib/api.ts)
@@ -345,7 +349,7 @@ Finetuning-Pipeline-frontend/
 - `advanceJob` / `finalizeJob` / `downloadRawData`
 - `admin.listPresets` / `createPreset` / `patchPreset` / `deletePreset`
 - `admin.listDataSources` / `createDataSource` / `patchDataSource` / `deleteDataSource`
-- `admin.hfSearch` / `admin.seedDefaults`
+- `admin.hfSearch` / `admin.seedDefaults` / `admin.autoRefreshCatalog`
 
 ### 타입 추가 (types/api.ts)
 

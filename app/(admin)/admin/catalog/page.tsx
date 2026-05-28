@@ -32,7 +32,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { Plus, Pencil, Trash2, Search, Sparkles } from "lucide-react";
+import { Plus, Pencil, Trash2, Search, Sparkles, RefreshCw } from "lucide-react";
 
 import { api } from "@/lib/api";
 import type {
@@ -63,6 +63,21 @@ export default function AdminCatalogPage() {
     onError: (e: Error) => alert(`시드 실패: ${e.message}`),
   });
 
+  const autoRefresh = useMutation({
+    mutationFn: () => api.admin.autoRefreshCatalog(),
+    onSuccess: (r) => {
+      qc.invalidateQueries({ queryKey: ["adminCatalog"] });
+      qc.invalidateQueries({ queryKey: ["adminPresets"] });
+      alert(
+        `자동 갱신 완료\n` +
+        `모델 +${r.models_added} (skip ${r.models_skipped})\n` +
+        `프리셋 +${r.presets_added} / 갱신 ${r.presets_updated} / 변경없음 ${r.presets_unchanged}\n` +
+        `HF 검색 ${r.queries_run}회 (오류 ${r.hf_search_errors})`,
+      );
+    },
+    onError: (e: Error) => alert(`자동 갱신 실패: ${e.message}`),
+  });
+
   const handleSeed = () => {
     if (
       !confirm(
@@ -77,6 +92,21 @@ export default function AdminCatalogPage() {
     seed.mutate();
   };
 
+  const handleAutoRefresh = () => {
+    if (
+      !confirm(
+        "HF Hub trending 기반 자동 갱신을 실행합니다.\n\n" +
+        "• 카테고리별 키워드로 HF Hub 검색\n" +
+        "• 라이선스 safelist + 다운로드 임계 통과한 신규 모델만 카탈로그에 추가\n" +
+        "• 기존 모델 행은 보존 (운영자 편집 우선)\n" +
+        "• 활성 카탈로그를 바탕으로 KSIC 프리셋의 추천 모델 재계산\n\n" +
+        "수십 초 소요될 수 있습니다.",
+      )
+    )
+      return;
+    autoRefresh.mutate();
+  };
+
   return (
     <>
       <Header
@@ -84,7 +114,18 @@ export default function AdminCatalogPage() {
         subtitle="모델 / 카테고리 프리셋 / 도메인 화이트리스트"
       />
       <div className="p-6 space-y-4">
-        <div className="flex justify-end">
+        <div className="flex justify-end gap-2">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={handleAutoRefresh}
+            disabled={autoRefresh.isPending}
+            className="gap-2"
+            title="HF Hub trending + KSIC 매핑으로 모델/프리셋 자동 추가·갱신"
+          >
+            <RefreshCw className={`h-4 w-4 ${autoRefresh.isPending ? "animate-spin" : ""}`} />
+            {autoRefresh.isPending ? "자동 갱신 중..." : "자동 갱신"}
+          </Button>
           <Button
             variant="outline"
             size="sm"

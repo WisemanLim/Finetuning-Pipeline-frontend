@@ -319,6 +319,18 @@ export const api = {
         presets_existing: number;
         whitelist_existing: number;
       }>("/admin/catalog/seed-defaults", { method: "POST" }),
+
+    // ── 카탈로그 자동 갱신 (HF Hub trending 기반) ──
+    autoRefreshCatalog: () =>
+      request<{
+        models_added: number;
+        models_skipped: number;
+        presets_added: number;
+        presets_updated: number;
+        presets_unchanged: number;
+        hf_search_errors: number;
+        queries_run: number;
+      }>("/admin/catalog/auto-refresh", { method: "POST" }),
     audit: (limit = 100) =>
       request<Array<{
         id: string; ts: string; actor_email: string; action: string;
