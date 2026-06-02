@@ -159,6 +159,7 @@ export const api = {
   // ── 사용자 ──
   updateProfile: (body: { name?: string | null }) =>
     request<UserPublic>("/users/me", { method: "PATCH", body: JSON.stringify(body) }),
+  // HF 토큰 저장/삭제 — 백엔드가 admin role 만 허용. UI 도 admin 일 때만 노출.
   saveHfToken: (hf_token: string) =>
     request<void>("/users/me/hf-token", { method: "POST", body: JSON.stringify({ hf_token }) }),
   deleteHfToken: () => request<void>("/users/me/hf-token", { method: "DELETE" }),
@@ -366,6 +367,89 @@ export const api = {
         method: "PATCH",
         body: JSON.stringify({ status }),
       }),
+
+    // 모델 다운로드 승인 — HF 토큰/라이선스 사전 검증 후 Stage 4 재시작.
+    // status: ok / gated / token_invalid / token_missing / not_found / error
+    modelDownload: (jobId: string) =>
+      request<{
+        repo_id: string;
+        accessible: boolean;
+        status: string;
+        detail: string;
+        hf_url: string;
+        job_restarted: boolean;
+      }>(`/admin/jobs/${jobId}/model-download`, { method: "POST" }),
+
+    // 카탈로그 모델 직접 다운로드 — admin 카탈로그 페이지의 '비활성' 클릭.
+    // status: ok / gated / token_invalid / token_missing / not_found /
+    //          already_downloaded / downloading / error
+    catalogDownload: (entryId: string) =>
+      request<{
+        hf_repo: string;
+        status: string;
+        detail: string;
+        hf_url: string;
+      }>(`/admin/catalog/models/${entryId}/download`, { method: "POST" }),
+
+    // HF 토큰 가용 상태 — env / admin DB / none
+    envHfTokenStatus: () =>
+      request<{
+        has_env_token: boolean;
+        has_admin_db_token: boolean;
+        effective_source: "env" | "admin_db" | "none";
+      }>("/admin/env/hf-token-status"),
+
+    // 카탈로그 모델 공개/비공개 토글 — source!="hf" 만 의미.
+    catalogTogglePublic: (id: string) =>
+      request<{
+        id: string;
+        hf_repo: string;
+        source: string;
+        is_public: boolean;
+      }>(`/admin/catalog/models/${id}/toggle-public`, { method: "POST" }),
+
+    // 사용자 모델 파일 업로드 — multipart. files 다수 허용.
+    catalogUploadModel: async (
+      meta: {
+        hf_repo: string;
+        params_b: number;
+        license?: string;
+        hw_min_vram_gb?: number;
+        language?: string;   // CSV
+        tags?: string;       // CSV
+        priority?: number;
+        is_public?: boolean;
+      },
+      files: File[],
+    ): Promise<CatalogItem> => {
+      const form = new FormData();
+      form.append("hf_repo", meta.hf_repo);
+      form.append("params_b", String(meta.params_b));
+      if (meta.license !== undefined) form.append("license", meta.license);
+      if (meta.hw_min_vram_gb !== undefined)
+        form.append("hw_min_vram_gb", String(meta.hw_min_vram_gb));
+      if (meta.language !== undefined) form.append("language", meta.language);
+      if (meta.tags !== undefined) form.append("tags", meta.tags);
+      if (meta.priority !== undefined) form.append("priority", String(meta.priority));
+      if (meta.is_public !== undefined) form.append("is_public", String(meta.is_public));
+      for (const f of files) form.append("files", f, f.name);
+
+      const token = tokenStore.get();
+      const headers: Record<string, string> = {};
+      if (token) headers["Authorization"] = `Bearer ${token}`;
+      const res = await fetch(`${BASE}/admin/catalog/models/upload`, {
+        method: "POST",
+        headers,
+        body: form,
+      });
+      if (!res.ok) {
+        const raw = await res.text();
+        let payload: unknown;
+        try { payload = raw ? JSON.parse(raw) : null; } catch { payload = raw; }
+        throw new ApiError(res.status, payload, `Upload failed: ${res.status}`);
+      }
+      return (await res.json()) as CatalogItem;
+    },
   },
 
   // 인증된 아티팩트 다운로드 — Bearer 헤더 첨부 필요해서 <a href>로 불가.

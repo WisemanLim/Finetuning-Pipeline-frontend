@@ -142,7 +142,13 @@ export interface CatalogItem {
   language: string[];
   tags: string[];
   priority: number;
-  is_active: boolean;
+  is_active: boolean;      // false = HF 미지원/사용불가 마킹
+  downloaded?: boolean;    // 로컬 HF cache 또는 local_path 존재
+  downloading?: boolean;   // 백그라운드 다운로드 진행 중
+  source?: "hf" | "finetuned" | "upload";
+  is_public?: boolean;     // source!="hf" 일 때 공개 여부
+  local_path?: string | null;
+  owner_user_id?: string | null;
 }
 
 export interface CatalogCreatePayload {

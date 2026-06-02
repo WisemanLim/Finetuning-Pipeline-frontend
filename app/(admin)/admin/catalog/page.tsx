@@ -169,6 +169,7 @@ function ModelsTab() {
   const { data, isLoading } = useQuery({
     queryKey: ["adminCatalog"],
     queryFn: () => api.admin.listCatalog(),
+    refetchInterval: 5000,   // 다운로드 진행 추적
   });
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editing, setEditing] = useState<CatalogItem | null>(null);
@@ -200,9 +201,51 @@ function ModelsTab() {
     onError: (e: Error) => alert(`삭제 실패: ${e.message}`),
   });
 
+  // 카탈로그 모델 다운로드 트리거.
+  const download = useMutation({
+    mutationFn: (id: string) => api.admin.catalogDownload(id),
+    onSuccess: (res) => {
+      const tail = res.status === "gated"
+        ? `\n\nHF 페이지: ${res.hf_url}\n→ Access repository → 라이선스 동의 → 본 모델 재클릭`
+        : res.status === "token_missing"
+          ? "\n\n관리자 설정 화면에서 HF Token 저장하거나 docker/.env 의 HF_TOKEN 설정 후 worker 재시작."
+          : res.status === "not_found"
+            ? "\n\n해당 모델은 HF 에서 미지원으로 카탈로그를 '사용불가' 로 변경."
+            : "";
+      alert(`[${res.status}] ${res.detail}${tail}`);
+      qc.invalidateQueries({ queryKey: ["adminCatalog"] });
+    },
+    onError: (e: Error) => alert(`다운로드 요청 실패: ${e.message}`),
+  });
+
+  const togglePublic = useMutation({
+    mutationFn: (id: string) => api.admin.catalogTogglePublic(id),
+    onSuccess: (res) => {
+      qc.invalidateQueries({ queryKey: ["adminCatalog"] });
+      alert(`'${res.hf_repo}' → ${res.is_public ? "사용자(공개)" : "사용자(비공개)"}`);
+    },
+    onError: (e: Error) => alert(`공개 토글 실패: ${e.message}`),
+  });
+
+  const [uploadOpen, setUploadOpen] = useState(false);
+
   const handleDelete = (item: CatalogItem) => {
     if (!confirm(`'${item.hf_repo}' 비활성화? (soft delete)`)) return;
     del.mutate(item.id);
+  };
+
+  const handleDownload = (item: CatalogItem) => {
+    if (!confirm(`'${item.hf_repo}' 다운로드를 시작합니까? HF 사전 검증 후 백그라운드 진행.`)) return;
+    download.mutate(item.id);
+  };
+
+  const handleTogglePublic = (item: CatalogItem) => {
+    const next = !item.is_public;
+    if (!confirm(
+      `'${item.hf_repo}' 을 ${next ? "공개" : "비공개"} 로 전환하시겠습니까?\n\n` +
+      `${next ? "다른 사용자도 이 모델을 사용할 수 있게 됩니다." : "이 모델은 소유자/관리자만 사용할 수 있게 됩니다."}`,
+    )) return;
+    togglePublic.mutate(item.id);
   };
 
   return (
@@ -210,16 +253,26 @@ function ModelsTab() {
       <CardHeader>
         <div className="flex justify-between items-center">
           <CardTitle className="text-base">등록 모델</CardTitle>
-          <Button
-            size="sm"
-            className="gap-2"
-            onClick={() => {
-              setEditing(null);
-              setDialogOpen(true);
-            }}
-          >
-            <Plus className="h-4 w-4" /> 모델 추가
-          </Button>
+          <div className="flex gap-2">
+            <Button
+              size="sm"
+              variant="outline"
+              className="gap-2"
+              onClick={() => setUploadOpen(true)}
+            >
+              📁 파일 업로드
+            </Button>
+            <Button
+              size="sm"
+              className="gap-2"
+              onClick={() => {
+                setEditing(null);
+                setDialogOpen(true);
+              }}
+            >
+              <Plus className="h-4 w-4" /> 모델 추가
+            </Button>
+          </div>
         </div>
       </CardHeader>
       <CardContent>
@@ -249,10 +302,35 @@ function ModelsTab() {
                   <TableCell>{m.language.join(", ")}</TableCell>
                   <TableCell>{m.priority}</TableCell>
                   <TableCell>
-                    {m.is_active ? (
-                      <Badge variant="success">활성</Badge>
+                    {!m.is_active ? (
+                      <Badge variant="destructive">사용불가</Badge>
+                    ) : m.downloading ? (
+                      <Badge variant="secondary">다운로드 중...</Badge>
+                    ) : m.source === "finetuned" || m.source === "upload" ? (
+                      <Button
+                        size="sm"
+                        variant={m.is_public ? "default" : "outline"}
+                        onClick={() => handleTogglePublic(m)}
+                        disabled={togglePublic.isPending}
+                        className="h-7 text-xs"
+                        title="클릭하여 공개/비공개 전환"
+                      >
+                        {m.is_public ? "사용자(공개)" : "사용자(비공개)"}
+                      </Button>
+                    ) : m.downloaded ? (
+                      <Badge variant="success">활성(HF공개)</Badge>
                     ) : (
-                      <Badge variant="secondary">비활성</Badge>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => handleDownload(m)}
+                        disabled={download.isPending}
+                        className="h-7 text-xs group relative"
+                        title="다운로드"
+                      >
+                        <span className="group-hover:hidden">비활성</span>
+                        <span className="hidden group-hover:inline">다운로드</span>
+                      </Button>
                     )}
                   </TableCell>
                   <TableCell className="text-right space-x-2">
@@ -304,7 +382,153 @@ function ModelsTab() {
           submitting={create.isPending || patch.isPending}
         />
       )}
+
+      {uploadOpen && (
+        <UploadDialog
+          open={uploadOpen}
+          onClose={() => setUploadOpen(false)}
+          onUploaded={() => {
+            setUploadOpen(false);
+            qc.invalidateQueries({ queryKey: ["adminCatalog"] });
+          }}
+        />
+      )}
     </Card>
+  );
+}
+
+function UploadDialog({
+  open,
+  onClose,
+  onUploaded,
+}: {
+  open: boolean;
+  onClose: () => void;
+  onUploaded: () => void;
+}) {
+  const [hfRepo, setHfRepo] = useState("");
+  const [paramsB, setParamsB] = useState("0");
+  const [license, setLicense] = useState("custom");
+  const [vram, setVram] = useState("0");
+  const [language, setLanguage] = useState("ko, en");
+  const [tags, setTags] = useState("upload");
+  const [priority, setPriority] = useState("50");
+  const [isPublic, setIsPublic] = useState(false);
+  const [files, setFiles] = useState<File[]>([]);
+  const [submitting, setSubmitting] = useState(false);
+
+  const handleSubmit = async () => {
+    if (!hfRepo.trim()) return alert("식별자 필수 (예: myorg/my-finetune)");
+    const p = parseFloat(paramsB);
+    if (!Number.isFinite(p) || p < 0) return alert("params_b 0 이상");
+    if (files.length === 0) return alert("파일 1 개 이상 선택");
+    setSubmitting(true);
+    try {
+      await api.admin.catalogUploadModel(
+        {
+          hf_repo: hfRepo.trim(),
+          params_b: p,
+          license: license.trim() || "custom",
+          hw_min_vram_gb: parseFloat(vram) || 0,
+          language: language.split(",").map((s) => s.trim()).filter(Boolean).join(","),
+          tags: tags.split(",").map((s) => s.trim()).filter(Boolean).join(","),
+          priority: parseInt(priority, 10) || 50,
+          is_public: isPublic,
+        },
+        files,
+      );
+      onUploaded();
+    } catch (e) {
+      alert(`업로드 실패: ${(e as Error).message}`);
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={(v) => !v && onClose()}>
+      <DialogContent className="max-w-2xl">
+        <DialogHeader>
+          <DialogTitle>모델 파일 업로드 (사용자 모델)</DialogTitle>
+        </DialogHeader>
+        <div className="space-y-3 max-h-[60vh] overflow-y-auto pr-2">
+          <p className="text-xs text-muted-foreground">
+            HF Repo 가 아닌 로컬 파일을 카탈로그에 등록합니다. 식별자는
+            <code className="mx-1 bg-muted/60 px-1 rounded">upload://&lt;식별자&gt;</code>
+            형태로 자동 prefix. 다수 파일 (config.json + safetensors + tokenizer.*) 선택 가능.
+          </p>
+          <div>
+            <Label>식별자 *</Label>
+            <Input
+              value={hfRepo}
+              onChange={(e) => setHfRepo(e.target.value)}
+              placeholder="myorg/my-finetune"
+              className="font-mono text-xs"
+            />
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <Label>Params (B)</Label>
+              <Input type="number" step="0.1" value={paramsB} onChange={(e) => setParamsB(e.target.value)} />
+            </div>
+            <div>
+              <Label>HW Min VRAM (GB)</Label>
+              <Input type="number" step="0.5" value={vram} onChange={(e) => setVram(e.target.value)} />
+            </div>
+            <div>
+              <Label>License</Label>
+              <Input value={license} onChange={(e) => setLicense(e.target.value)} />
+            </div>
+            <div>
+              <Label>Priority</Label>
+              <Input type="number" value={priority} onChange={(e) => setPriority(e.target.value)} />
+            </div>
+            <div className="col-span-2">
+              <Label>언어 (콤마)</Label>
+              <Input value={language} onChange={(e) => setLanguage(e.target.value)} />
+            </div>
+            <div className="col-span-2">
+              <Label>태그 (콤마)</Label>
+              <Input value={tags} onChange={(e) => setTags(e.target.value)} />
+            </div>
+            <div className="col-span-2 flex items-center gap-2">
+              <input
+                id="is_public"
+                type="checkbox"
+                checked={isPublic}
+                onChange={(e) => setIsPublic(e.target.checked)}
+              />
+              <Label htmlFor="is_public" className="cursor-pointer">
+                공개 (다른 사용자도 사용 가능)
+              </Label>
+            </div>
+          </div>
+          <div>
+            <Label>파일 선택 *</Label>
+            <Input
+              type="file"
+              multiple
+              onChange={(e) => setFiles(Array.from(e.target.files ?? []))}
+            />
+            {files.length > 0 && (
+              <ul className="mt-2 text-xs text-muted-foreground space-y-0.5">
+                {files.map((f) => (
+                  <li key={f.name}>
+                    <code>{f.name}</code> ({(f.size / 1024 / 1024).toFixed(2)} MB)
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+        </div>
+        <DialogFooter>
+          <Button variant="outline" onClick={onClose} disabled={submitting}>취소</Button>
+          <Button onClick={handleSubmit} disabled={submitting}>
+            {submitting ? "업로드 중..." : "업로드"}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }
 
