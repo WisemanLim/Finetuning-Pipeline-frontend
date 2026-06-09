@@ -32,7 +32,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { Plus, Pencil, Trash2, Search, Sparkles, RefreshCw } from "lucide-react";
+import { Plus, Pencil, Trash2, Search, Sparkles, RefreshCw, Download } from "lucide-react";
 
 import { api } from "@/lib/api";
 import type {
@@ -239,6 +239,14 @@ function ModelsTab() {
     download.mutate(item.id);
   };
 
+  const handleDownloadFiles = async (item: CatalogItem) => {
+    try {
+      await api.admin.catalogDownloadFiles(item.id);
+    } catch (e) {
+      alert(`다운로드 실패: ${(e as Error).message}`);
+    }
+  };
+
   const handleTogglePublic = (item: CatalogItem) => {
     const next = !item.is_public;
     if (!confirm(
@@ -287,6 +295,7 @@ function ModelsTab() {
                 <TableHead>License</TableHead>
                 <TableHead>HW Min VRAM</TableHead>
                 <TableHead>언어</TableHead>
+                <TableHead>포맷</TableHead>
                 <TableHead>Priority</TableHead>
                 <TableHead>활성</TableHead>
                 <TableHead className="text-right">액션</TableHead>
@@ -300,6 +309,16 @@ function ModelsTab() {
                   <TableCell>{m.license}</TableCell>
                   <TableCell>{m.hw_min_vram_gb} GB</TableCell>
                   <TableCell>{m.language.join(", ")}</TableCell>
+                  <TableCell>
+                    <div className="flex flex-col gap-0.5">
+                      <Badge variant="outline" className="text-xs w-fit">
+                        {m.model_format ?? "safetensors"}
+                      </Badge>
+                      {m.is_finetunable === false && (
+                        <span className="text-[10px] text-amber-600">추론 전용</span>
+                      )}
+                    </div>
+                  </TableCell>
                   <TableCell>{m.priority}</TableCell>
                   <TableCell>
                     {!m.is_active ? (
@@ -334,6 +353,16 @@ function ModelsTab() {
                     )}
                   </TableCell>
                   <TableCell className="text-right space-x-2">
+                    {(m.source === "finetuned" || m.source === "upload") && (
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => handleDownloadFiles(m)}
+                        title="모델 파일 다운로드 (zip)"
+                      >
+                        <Download className="h-3 w-3" />
+                      </Button>
+                    )}
                     <Button
                       size="sm"
                       variant="outline"
@@ -356,7 +385,7 @@ function ModelsTab() {
               ))}
               {!data?.length && (
                 <TableRow>
-                  <TableCell colSpan={8} className="text-center text-muted-foreground py-8">
+                  <TableCell colSpan={9} className="text-center text-muted-foreground py-8">
                     등록된 모델 없음
                   </TableCell>
                 </TableRow>
@@ -414,6 +443,7 @@ function UploadDialog({
   const [tags, setTags] = useState("upload");
   const [priority, setPriority] = useState("50");
   const [isPublic, setIsPublic] = useState(false);
+  const [modelFormat, setModelFormat] = useState("auto");
   const [files, setFiles] = useState<File[]>([]);
   const [submitting, setSubmitting] = useState(false);
 
@@ -434,6 +464,7 @@ function UploadDialog({
           tags: tags.split(",").map((s) => s.trim()).filter(Boolean).join(","),
           priority: parseInt(priority, 10) || 50,
           is_public: isPublic,
+          model_format: modelFormat,
         },
         files,
       );
@@ -455,7 +486,8 @@ function UploadDialog({
           <p className="text-xs text-muted-foreground">
             HF Repo 가 아닌 로컬 파일을 카탈로그에 등록합니다. 식별자는
             <code className="mx-1 bg-muted/60 px-1 rounded">upload://&lt;식별자&gt;</code>
-            형태로 자동 prefix. 다수 파일 (config.json + safetensors + tokenizer.*) 선택 가능.
+            형태로 자동 prefix. 다수 파일 선택 가능. safetensors 외 포맷(gguf/mlx/pytorch/onnx)도
+            업로드되며, safetensors 만 파인튜닝 베이스로 사용 가능하고 그 외는 추론/배포 전용입니다.
           </p>
           <div>
             <Label>식별자 *</Label>
@@ -482,6 +514,22 @@ function UploadDialog({
             <div>
               <Label>Priority</Label>
               <Input type="number" value={priority} onChange={(e) => setPriority(e.target.value)} />
+            </div>
+            <div className="col-span-2">
+              <Label>모델 포맷</Label>
+              <select
+                className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                value={modelFormat}
+                onChange={(e) => setModelFormat(e.target.value)}
+              >
+                <option value="auto">자동 감지 (파일 확장자 기준)</option>
+                <option value="safetensors">safetensors (파인튜닝 베이스 가능)</option>
+                <option value="gguf">gguf (추론 전용)</option>
+                <option value="mlx">mlx (추론 전용)</option>
+                <option value="pytorch">pytorch (추론 전용)</option>
+                <option value="onnx">onnx (추론 전용)</option>
+                <option value="other">기타</option>
+              </select>
             </div>
             <div className="col-span-2">
               <Label>언어 (콤마)</Label>

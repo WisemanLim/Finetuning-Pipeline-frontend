@@ -15,7 +15,36 @@ export type TrainStrategy = "full_ft" | "lora" | "qlora" | "dpo" | "orpo";
 
 export type Quantization = "none" | "int8" | "int4";
 
-export type ArtifactKind = "adapter" | "merged" | "gguf" | "zip" | "model_card";
+export type ArtifactKind =
+  | "adapter" | "merged" | "gguf" | "mlx" | "pytorch" | "onnx" | "zip" | "model_card";
+
+// 파인튜닝 완료 후 on-demand 변환 가능한 포맷
+export type ConvertFormat = "merged" | "gguf" | "mlx" | "pytorch" | "onnx";
+
+// 모델 파일 포맷 (카탈로그)
+export type ModelFormat = "safetensors" | "gguf" | "mlx" | "pytorch" | "onnx" | "other";
+
+export interface FormatStatus {
+  format: ConvertFormat;
+  available: boolean;   // 변환 도구 설치 여부
+  state: "idle" | "running" | "done" | "error";
+  hint: string;         // 미설치 시 설치 안내
+  error: string;
+}
+
+export interface ConvertStatusResult {
+  job_id: string;
+  job_done: boolean;
+  formats: FormatStatus[];
+}
+
+export interface ConvertResult {
+  job_id: string;
+  format: string;
+  // started/in_progress/already_exists/tooling_missing/not_done/done/error
+  status: string;
+  detail: string;
+}
 
 export interface GPUInfo {
   index: number;
@@ -149,6 +178,8 @@ export interface CatalogItem {
   is_public?: boolean;     // source!="hf" 일 때 공개 여부
   local_path?: string | null;
   owner_user_id?: string | null;
+  model_format?: ModelFormat;   // 모델 파일 포맷
+  is_finetunable?: boolean;     // 파인튜닝 베이스 사용 가능 여부
 }
 
 export interface CatalogCreatePayload {
@@ -159,6 +190,7 @@ export interface CatalogCreatePayload {
   language?: string[];
   tags?: string[];
   priority?: number;
+  model_format?: ModelFormat;
 }
 
 export interface PresetItem {

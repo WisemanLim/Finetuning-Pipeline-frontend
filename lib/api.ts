@@ -10,6 +10,8 @@
 import type {
   CatalogCreatePayload,
   CatalogItem,
+  ConvertResult,
+  ConvertStatusResult,
   DataSourceCreatePayload,
   DataSourceItem,
   HWCaps,
@@ -419,6 +421,7 @@ export const api = {
         tags?: string;       // CSV
         priority?: number;
         is_public?: boolean;
+        model_format?: string;   // safetensors/gguf/mlx/pytorch/onnx/auto
       },
       files: File[],
     ): Promise<CatalogItem> => {
@@ -432,6 +435,7 @@ export const api = {
       if (meta.tags !== undefined) form.append("tags", meta.tags);
       if (meta.priority !== undefined) form.append("priority", String(meta.priority));
       if (meta.is_public !== undefined) form.append("is_public", String(meta.is_public));
+      form.append("model_format", meta.model_format ?? "auto");
       for (const f of files) form.append("files", f, f.name);
 
       const token = tokenStore.get();
@@ -450,7 +454,42 @@ export const api = {
       }
       return (await res.json()) as CatalogItem;
     },
+
+    // 업로드/파인튜닝 카탈로그 모델 파일 다운로드 (local_path → zip). blob 패턴.
+    catalogDownloadFiles: async (entryId: string): Promise<void> => {
+      const token = tokenStore.get();
+      const res = await fetch(`${BASE}/admin/catalog/models/${entryId}/download-files`, {
+        headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+      });
+      if (!res.ok) {
+        const text = await res.text();
+        throw new Error(`다운로드 실패 ${res.status}: ${text.slice(0, 200)}`);
+      }
+      const cd = res.headers.get("content-disposition") || "";
+      const m = cd.match(/filename\*?=(?:UTF-8'')?"?([^";]+)"?/i);
+      const filename = m ? decodeURIComponent(m[1]) : `model_${entryId.slice(0, 8)}.zip`;
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+    },
   },
+
+  // 파인튜닝 완료 모델 포맷 변환 트리거 (비동기). 이후 convertStatus 폴링 → downloadArtifact.
+  convertArtifact: (jobId: string, format: string, quant = "Q4_K_M") =>
+    request<ConvertResult>(`/jobs/${jobId}/convert`, {
+      method: "POST",
+      body: JSON.stringify({ format, quant }),
+    }),
+
+  // 포맷별 변환 가능 여부 + 진행 상태 + 완료 여부
+  convertStatus: (jobId: string) =>
+    request<ConvertStatusResult>(`/jobs/${jobId}/convert/status`),
 
   // 인증된 아티팩트 다운로드 — Bearer 헤더 첨부 필요해서 <a href>로 불가.
   // blob 받아서 Object URL로 트리거. 파일명은 Content-Disposition에서 추출.
